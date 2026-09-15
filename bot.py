@@ -20,7 +20,7 @@ load_dotenv()
 LECTURE_LOGIN = os.getenv("LECTURE_LOGIN")
 LECTURE_PASSWORD = os.getenv("LECTURE_PASSWORD")
 LECTURE_URL = os.getenv("LECTURE_URL")
-HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
+HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
 
 if not all([LECTURE_LOGIN, LECTURE_PASSWORD, LECTURE_URL]):
     raise EnvironmentError("Не заданы LECTURE_LOGIN / LECTURE_PASSWORD / LECTURE_URL")
@@ -57,9 +57,9 @@ def create_driver(headless: bool = True) -> webdriver.Chrome:
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--log-level=3")
+    options.add_argument("--disable-popup-blocking")          # ← добавить
     options.add_experimental_option("excludeSwitches", ["enable-logging"])
     return webdriver.Chrome(options=options)
-
 
 # ---------- Вход ----------
 def login(driver: webdriver.Chrome) -> None:
