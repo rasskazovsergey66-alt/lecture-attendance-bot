@@ -1,18 +1,16 @@
 # lecture_joiner.py
 """
-Подключение к лекциям с РЕАЛЬНОЙ проверкой времени.
+Подключение к лекциям с РЕАЛЬНОЙ проверкой времени по Екатеринбургу (UTC+5).
 
-Никаких time.sleep(90*60). Только цикл, который каждые CHECK_INTERVAL_SEC сек
-сравнивает datetime.now() с целевым временем.
-
-Если поменять системные часы — бот отреагирует в пределах CHECK_INTERVAL_SEC.
-Если поменять LECTURE_DURATION_MIN — изменится реальное время сидения.
+Часовой пояс жёстко зашит через zoneinfo — не зависит от TZ машины,
+системных настроек GitHub runner'а и локального окружения.
 """
 
 import logging
 import re
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -29,11 +27,19 @@ JOIN_BEFORE_MINUTES = 2      # подключаться за N минут до �
 LECTURE_DURATION_MIN = 90    # длительность пары в минутах
 CHECK_INTERVAL_SEC = 30      # как часто сверяться с часами
 
+# Часовой пояс Екатеринбурга (UTC+5) — жёстко, независимо от машины
+EKATERINBURG_TZ = ZoneInfo("Asia/Yekaterinburg")
+
 MONTHS_RU = {
     "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
     "мая": 5, "июня": 6, "июля": 7, "августа": 8,
     "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
 }
+
+
+def now_ekb() -> datetime:
+    """Текущее время в Екатеринбурге, независимо от TZ машины."""
+    return datetime.now(EKATERINBURG_TZ)
 
 
 # ============================================================
@@ -54,7 +60,7 @@ def run_today(driver, lessons: list[dict]) -> None:
 #  ФИЛЬТР ПО ДАТЕ
 # ============================================================
 def _today_lessons(lessons: list[dict]) -> list[dict]:
-    today = datetime.now().date()
+    today = now_ekb().date()
     result = []
     for lesson in lessons:
         lesson_date = _parse_date(lesson.get("day", ""))
@@ -99,27 +105,24 @@ def _handle_lesson(driver, lesson: dict) -> None:
 
     end_time = start + timedelta(minutes=LECTURE_DURATION_MIN)
     join_at = start - timedelta(minutes=JOIN_BEFORE_MINUTES)
-    now = datetime.now()
+    now = now_ekb()
 
-    logger.info("Пара '%s': начало %s, конец %s, подключаюсь в %s",
+    logger.info("Пара '%s': начало %s, конец %s, подключаюсь в %s (Екб)",
                 subject,
                 start.strftime("%H:%M"),
                 end_time.strftime("%H:%M"),
                 join_at.strftime("%H:%M"))
 
-    # Пара уже прошла?
     if now > end_time:
         logger.info("Пара '%s' уже прошла (сейчас %s > %s)",
                     subject, now.strftime("%H:%M"), end_time.strftime("%H:%M"))
         return
 
-    # Ждём момента подключения (если ещё рано)
     if now < join_at:
         logger.info("Жду до %s (сейчас %s)",
                     join_at.strftime("%H:%M"), now.strftime("%H:%M"))
         _wait_until(join_at)
 
-    # Подключаемся
     logger.info("Подключаюсь к '%s'", subject)
     try:
         _join_lecture(driver, link)
@@ -128,14 +131,12 @@ def _handle_lesson(driver, lesson: dict) -> None:
         logger.error("Не удалось подключиться к '%s': %s", subject, e)
         return
 
-    # Сидим до end_time — реальная проверка часов каждые CHECK_INTERVAL_SEC
     logger.info("Сижу до %s (проверка каждые %d сек)",
                 end_time.strftime("%H:%M"), CHECK_INTERVAL_SEC)
     _wait_until(end_time)
 
-    # Выходим
     logger.info("Время пары '%s' истекло (сейчас %s)",
-                subject, datetime.now().strftime("%H:%M"))
+                subject, now_ekb().strftime("%H:%M"))
     _leave_lecture(driver)
 
 
@@ -217,12 +218,12 @@ def _close_tab(driver) -> None:
 #  ВРЕМЯ: парсинг и ожидание
 # ============================================================
 def _parse_time_today(time_str: str):
-    """'09:00' или '09:00 - 10:30' → datetime сегодня 09:00."""
+    """'09:00' или '09:00 - 10:30' → datetime Екб сегодня 09:00."""
     m = re.search(r"(\d{1,2}):(\d{2})", time_str or "")
     if not m:
         return None
     hh, mm = int(m.group(1)), int(m.group(2))
-    now = datetime.now()
+    now = now_ekb()
     try:
         return now.replace(hour=hh, minute=mm, second=0, microsecond=0)
     except ValueError:
@@ -231,16 +232,11 @@ def _parse_time_today(time_str: str):
 
 def _wait_until(target: datetime) -> None:
     """
-    Спит до target, но НЕ слепым time.sleep.
-    Каждые CHECK_INTERVAL_SEC секунд сверяется с datetime.now().
-
-    Реагирует на:
-      - изменение системных часов
-      - изменения в LECTURE_DURATION_MIN / JOIN_BEFORE_MINUTES
-        (потому что target пересчитывается снаружи)
+    Спит до target, но не слепым time.sleep.
+    Каждые CHECK_INTERVAL_SEC секунд сверяется с now_ekb().
     """
     while True:
-        now = datetime.now()
+        now = now_ekb()
         delta = (target - now).total_seconds()
 
         if delta <= 0:

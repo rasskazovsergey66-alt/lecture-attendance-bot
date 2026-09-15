@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 
 from schedule_parser import parse_schedule, dump_html
-from lecture_joiner import run_today
+from lecture_joiner import run_today, now_ekb
 
 
 # ---------- Переменные окружения ----------
@@ -20,7 +20,7 @@ load_dotenv()
 LECTURE_LOGIN = os.getenv("LECTURE_LOGIN")
 LECTURE_PASSWORD = os.getenv("LECTURE_PASSWORD")
 LECTURE_URL = os.getenv("LECTURE_URL")
-HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
+HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 
 if not all([LECTURE_LOGIN, LECTURE_PASSWORD, LECTURE_URL]):
     raise EnvironmentError("Не заданы LECTURE_LOGIN / LECTURE_PASSWORD / LECTURE_URL")
@@ -97,6 +97,7 @@ def open_schedule(driver: webdriver.Chrome) -> None:
 # ---------- Main ----------
 def main() -> None:
     logger.info("HEADLESS = %s", HEADLESS)
+    logger.info("Время бота (Екатеринбург): %s", now_ekb().strftime("%Y-%m-%d %H:%M:%S %Z"))
     driver = create_driver(headless=HEADLESS)
     try:
         # 1. Логин

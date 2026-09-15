@@ -1,0 +1,58 @@
+name: Lecture Attendance Bot
+
+on:
+  schedule:
+    # Смена 1: 10:00–16:00 по Екатеринбургу (05:00–11:00 UTC)
+    - cron: "0 5 * * *"
+    # Смена 2: 16:00–22:00 по Екатеринбургу (11:00–17:00 UTC)
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      shift:
+        description: 'Смена для ручного запуска'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - afternoon
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    # Устанавливаем максимально возможный таймаут, чтобы job не упал раньше 6 часов
+    timeout-minutes: 360
+
+    env:
+      TZ: Asia/Yekaterinburg
+      HEADLESS: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Determine shift
+        id: shift
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.shift }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "0 5 * * *" ]; then
+            echo "value=morning" >> $GITHUB_OUTPUT
+          else
+            echo "value=afternoon" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run bot
+        env:
+          LECTURE_LOGIN:    ${{ secrets.LECTURE_LOGIN }}
+          LECTURE_PASSWORD: ${{ secrets.LECTURE_PASSWORD }}
+          LECTURE_URL:      ${{ secrets.LECTURE_URL }}
+          SHIFT:            ${{ steps.shift.outputs.value }}
+        run: python bot.py --shift $SHIFT
